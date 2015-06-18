@@ -5,7 +5,10 @@ find_package(catkin REQUIRED COMPONENTS
   ackermann_msgs
   dual_controller_interface
   nav_msgs
+  tf
 )
+
+find_package(Boost REQUIRED)
 
 ###################################
 ## catkin specific configuration ##
@@ -13,7 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES ackermann_controller
-  CATKIN_DEPENDS ackermann_msgs dual_controller_interface nav_msgs
+  CATKIN_DEPENDS ackermann_msgs dual_controller_interface nav_msgs tf
 )
 
 ###########
@@ -23,6 +26,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIRS}
 )
 
 ## Declare a cpp library
@@ -34,6 +38,7 @@ add_executable(ackermann_controller_test src/ackermann_controller_test.cpp)
 
 target_link_libraries(ackermann_controller
   ${catkin_LIBRARIES}
+  ${Boost_LIBRARIES}
 )
 
 target_link_libraries(ackermann_controller_test

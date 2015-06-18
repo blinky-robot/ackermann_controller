@@ -23,7 +23,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <boost/assign.hpp>
 #include <pluginlib/class_list_macros.h>
+#include <tf/transform_datatypes.h>
 
 #include "ackermann_controller/ackermann_controller.h"
 
@@ -36,8 +38,13 @@ namespace ackermann_controller
 		  nh_priv(NULL),
 		  drive_joint_name("drive_motor"),
 		  steering_joint_name("steering_servo"),
+		  base_length(0.33),
 		  wheel_diameter(0.109),
-		  running_wheel_position(0.0)
+		  last_theta(-M_PI / 2.0),
+		  last_wheel_pos(0.0),
+		  cmd_timeout(0.25),
+		  since_last_cmd(0.0),
+		  have_msg(false)
 	{
 	}
 
@@ -47,12 +54,52 @@ namespace ackermann_controller
 
 	bool AckermannController::init(hardware_interface::PositionJointInterface *hw_a, hardware_interface::VelocityJointInterface *hw_b, ros::NodeHandle &root_nh, ros::NodeHandle &controller_nh)
 	{
+		int i;
+		XmlRpc::XmlRpcValue pose_cov_list;
+		XmlRpc::XmlRpcValue twist_cov_list;
+
 		nh = &root_nh;
 		nh_priv = &controller_nh;
 
 		nh_priv->param("drive_joint_name", drive_joint_name, drive_joint_name);
+		nh_priv->param("base_length", base_length, base_length);
+		nh_priv->param("cmd_timeout", cmd_timeout, cmd_timeout);
+		nh_priv->param("child_frame_id", odom_msg.child_frame_id, std::string("base_link"));
+		nh_priv->param("frame_id", odom_msg.header.frame_id, std::string("odom"));
 		nh_priv->param("steering_joint_name", steering_joint_name, steering_joint_name);
 		nh_priv->param("wheel_diameter", wheel_diameter, wheel_diameter);
+
+		nh_priv->getParam("pose_covariance_diagonal", pose_cov_list);
+		ROS_ASSERT(pose_cov_list.getType() == XmlRpc::XmlRpcValue::TypeArray);
+		ROS_ASSERT(pose_cov_list.size() == 6);
+		for (i = 0; i < pose_cov_list.size(); ++i)
+		{
+			ROS_ASSERT(pose_cov_list[i].getType() == XmlRpc::XmlRpcValue::TypeDouble);
+		}
+
+		nh_priv->getParam("twist_covariance_diagonal", twist_cov_list);
+		ROS_ASSERT(twist_cov_list.getType() == XmlRpc::XmlRpcValue::TypeArray);
+		ROS_ASSERT(twist_cov_list.size() == 6);
+		for (i = 0; i < twist_cov_list.size(); ++i)
+		{
+			ROS_ASSERT(twist_cov_list[i].getType() == XmlRpc::XmlRpcValue::TypeDouble);
+		}
+
+		odom_msg.pose.covariance = boost::assign::list_of
+			(static_cast<double>(pose_cov_list[0])) (0)  (0)  (0)  (0)  (0)
+			(0)  (static_cast<double>(pose_cov_list[1])) (0)  (0)  (0)  (0)
+			(0)  (0)  (static_cast<double>(pose_cov_list[2])) (0)  (0)  (0)
+			(0)  (0)  (0)  (static_cast<double>(pose_cov_list[3])) (0)  (0)
+			(0)  (0)  (0)  (0)  (static_cast<double>(pose_cov_list[4])) (0)
+			(0)  (0)  (0)  (0)  (0)  (static_cast<double>(pose_cov_list[5]));
+
+		odom_msg.twist.covariance = boost::assign::list_of
+			(static_cast<double>(twist_cov_list[0])) (0)  (0)  (0)  (0)  (0)
+			(0)  (static_cast<double>(twist_cov_list[1])) (0)  (0)  (0)  (0)
+			(0)  (0)  (static_cast<double>(twist_cov_list[2])) (0)  (0)  (0)
+			(0)  (0)  (0)  (static_cast<double>(twist_cov_list[3])) (0)  (0)
+			(0)  (0)  (0)  (0)  (static_cast<double>(twist_cov_list[4])) (0)
+			(0)  (0)  (0)  (0)  (0)  (static_cast<double>(twist_cov_list[5]));
 
 		drive_joint = hw_b->getHandle(drive_joint_name);
 		steering_joint = hw_a->getHandle(steering_joint_name);
@@ -91,24 +138,62 @@ namespace ackermann_controller
 		nav_msgs::Odometry msg;
 		double drive_pos;
 		double drive_vel;
-		//double steering_pos;
-		//double steering_vel;
+		double steering_pos;
+		double d_pos;
+		double d_dist;
+		double d_theta;
+		double d_x;
+		double d_y;
 
 		drive_pos = drive_joint.getPosition();
 		drive_vel = drive_joint.getVelocity();
-		//steering_pos = steering_joint.getPosition();
-		//steering_vel = steering_joint.getVelocity();
+		steering_pos = steering_joint.getPosition();
 
-		msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
+		d_pos = drive_pos - last_wheel_pos;
+		d_dist = d_pos * wheel_diameter / 2.0;
+		d_theta = tan(steering_pos) * d_dist / base_length;
+		d_x = sin(d_theta) * d_dist;
+		d_y = cos(d_theta) * d_dist;
 
-		odom_pub.publish(msg);
+		//std::cout << "roc: " << base_length / tan(steering_pos) << std::endl;
 
-		running_wheel_position = drive_pos;
+		if (d_pos < 10)
+		{
+			odom_msg.pose.pose.position.x += d_x * cos(last_theta) - d_y * sin(last_theta);
+			odom_msg.pose.pose.position.y += d_x * sin(last_theta) + d_y * cos(last_theta);
+
+			last_theta += d_theta;
+
+			odom_msg.pose.pose.orientation = tf::createQuaternionMsgFromYaw(last_theta + M_PI / 2.0);
+
+			odom_msg.twist.twist.angular.z = d_theta / period.toSec();
+			odom_msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
+
+			odom_msg.header.stamp = time;
+
+			odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
+		}
+		else
+		{
+			ROS_WARN("Detected a large change in wheel position (%lf). Discarding this result...", d_pos);
+		}
+
+		last_wheel_pos = drive_pos;
+
+		if (have_msg && since_last_cmd.toSec() > cmd_timeout)
+		{
+			ROS_WARN_THROTTLE(1, "Timeout receiving commands");
+			drive_joint.setCommand(0.0);
+		}
+
+		since_last_cmd += period;
 	}
 
 	void AckermannController::ackermannCmdCallback(const ackermann_msgs::AckermannDrive::ConstPtr &msg)
 	{
-		drive_joint.setCommand(2.0 * msg->speed / wheel_diameter);
+		drive_joint.setCommand(2.0 * msg->speed / wheel_diameter); // Convert to angular
 		steering_joint.setCommand(msg->steering_angle);
+		since_last_cmd.fromSec(0.0);
+		have_msg = true;
 	}
 }

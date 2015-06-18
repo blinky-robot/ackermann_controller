@@ -58,9 +58,16 @@ namespace ackermann_controller
 		hardware_interface::JointHandle steering_joint;
 		std::string steering_joint_name;
 
+		double base_length;
 		double wheel_diameter;
 
-		double running_wheel_position;
+		double last_theta;
+		double last_wheel_pos;
+		nav_msgs::Odometry odom_msg;
+
+		double cmd_timeout;
+		ros::Duration since_last_cmd;
+		bool have_msg;
 	};
 }
 
