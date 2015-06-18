@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<library path="lib/libackermann_controller">
+  <class name="ackermann_controller/AckermannController" type="ackermann_controller::AckermannController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      The AckermannController tracks ackermann drive commands. It expects 1 VelocityJointInterface type and 1 VelocityJointInterface type of hardware interface.
+    </description>
+  </class>
+</library>
