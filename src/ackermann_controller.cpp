@@ -36,7 +36,8 @@ namespace ackermann_controller
 		  nh_priv(NULL),
 		  drive_joint_name("drive_motor"),
 		  steering_joint_name("steering_servo"),
-		  wheel_diameter(0.109)
+		  wheel_diameter(0.109),
+		  running_wheel_position(0.0)
 	{
 	}
 
@@ -65,6 +66,11 @@ namespace ackermann_controller
 		{
 			ackermann_sub = nh->subscribe("ackermann_cmd", 1, &AckermannController::ackermannCmdCallback, this);
 		}
+
+		if (!odom_pub)
+		{
+			odom_pub = nh->advertise<nav_msgs::Odometry>("odom", 1);
+		}
 	}
 
 	void AckermannController::stopping(const ros::Time &time)
@@ -73,12 +79,31 @@ namespace ackermann_controller
 		{
 			ackermann_sub.shutdown();
 		}
+
+		if (odom_pub)
+		{
+			odom_pub.shutdown();
+		}
 	}
 
 	void AckermannController::update(const ros::Time& time, const ros::Duration& period)
 	{
-		drive_joint.getPosition();
-		steering_joint.getPosition();
+		nav_msgs::Odometry msg;
+		double drive_pos;
+		double drive_vel;
+		//double steering_pos;
+		//double steering_vel;
+
+		drive_pos = drive_joint.getPosition();
+		drive_vel = drive_joint.getVelocity();
+		//steering_pos = steering_joint.getPosition();
+		//steering_vel = steering_joint.getVelocity();
+
+		msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
+
+		odom_pub.publish(msg);
+
+		running_wheel_position = drive_pos;
 	}
 
 	void AckermannController::ackermannCmdCallback(const ackermann_msgs::AckermannDrive::ConstPtr &msg)

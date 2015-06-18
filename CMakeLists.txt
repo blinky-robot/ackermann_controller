@@ -4,6 +4,7 @@ project(ackermann_controller)
 find_package(catkin REQUIRED COMPONENTS
   ackermann_msgs
   dual_controller_interface
+  nav_msgs
 )
 
 ###################################
@@ -12,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES ackermann_controller
-  CATKIN_DEPENDS ackermann_msgs dual_controller_interface
+  CATKIN_DEPENDS ackermann_msgs dual_controller_interface nav_msgs
 )
 
 ###########

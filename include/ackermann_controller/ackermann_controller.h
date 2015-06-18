@@ -29,6 +29,7 @@
 #include <ackermann_msgs/AckermannDrive.h>
 #include <dual_controller_interface/dual_controller_interface.h>
 #include <hardware_interface/joint_command_interface.h>
+#include <nav_msgs/Odometry.h>
 
 namespace ackermann_controller
 {
@@ -50,6 +51,7 @@ namespace ackermann_controller
 		ros::NodeHandle *nh_priv;
 
 		ros::Subscriber ackermann_sub;
+		ros::Publisher odom_pub;
 
 		hardware_interface::JointHandle drive_joint;
 		std::string drive_joint_name;
@@ -57,6 +59,8 @@ namespace ackermann_controller
 		std::string steering_joint_name;
 
 		double wheel_diameter;
+
+		double running_wheel_position;
 	};
 }
 
