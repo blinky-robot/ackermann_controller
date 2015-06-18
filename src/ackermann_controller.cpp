@@ -109,8 +109,6 @@ namespace ackermann_controller
 	void AckermannController::ackermannCmdCallback(const ackermann_msgs::AckermannDrive::ConstPtr &msg)
 	{
 		drive_joint.setCommand(2.0 * msg->speed / wheel_diameter);
-
-		// Hack
 		steering_joint.setCommand(msg->steering_angle);
 	}
 }
