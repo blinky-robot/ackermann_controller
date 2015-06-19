@@ -48,6 +48,13 @@ namespace ackermann_controller
 		  tf_br(NULL),
 		  have_imu(false)
 	{
+		odom_msg.pose.pose.position.x = 0;
+		odom_msg.pose.pose.position.y = 0;
+		odom_msg.pose.pose.position.z = 0;
+		odom_msg.pose.pose.orientation.w = 1;
+		odom_msg.pose.pose.orientation.x = 0;
+		odom_msg.pose.pose.orientation.y = 0;
+		odom_msg.pose.pose.orientation.z = 0;
 	}
 
 	AckermannController::~AckermannController()
@@ -183,7 +190,7 @@ namespace ackermann_controller
 
 				if (dd_x != dd_x || dd_y != dd_y)
 				{
-					ROS_WARN("Skipping this reading because WTF.");
+					ROS_WARN("Skipping this reading because WTF: %lf", last_theta);
 					goto wtfwtf;
 				}
 
