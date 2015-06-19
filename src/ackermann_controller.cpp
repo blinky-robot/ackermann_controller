@@ -44,12 +44,15 @@ namespace ackermann_controller
 		  last_wheel_pos(0.0),
 		  cmd_timeout(0.25),
 		  since_last_cmd(0.0),
-		  have_msg(false)
+		  have_msg(false),
+		  tf_br(NULL),
+		  have_imu(false)
 	{
 	}
 
 	AckermannController::~AckermannController()
 	{
+		delete tf_br;
 	}
 
 	bool AckermannController::init(hardware_interface::PositionJointInterface *hw_a, hardware_interface::VelocityJointInterface *hw_b, ros::NodeHandle &root_nh, ros::NodeHandle &controller_nh)
@@ -104,6 +107,11 @@ namespace ackermann_controller
 		drive_joint = hw_b->getHandle(drive_joint_name);
 		steering_joint = hw_a->getHandle(steering_joint_name);
 
+		if (tf_br == NULL)
+		{
+			tf_br = new tf::TransformBroadcaster();
+		}
+
 		return true;
 	}
 
@@ -118,6 +126,12 @@ namespace ackermann_controller
 		{
 			odom_pub = nh->advertise<nav_msgs::Odometry>("odom", 1);
 		}
+
+		// Hack
+		if (!imu_sub)
+		{
+			imu_sub = nh->subscribe("imu/data_fixed", 1, &AckermannController::imuCallback, this);
+		}
 	}
 
 	void AckermannController::stopping(const ros::Time &time)
@@ -130,6 +144,11 @@ namespace ackermann_controller
 		if (odom_pub)
 		{
 			odom_pub.shutdown();
+		}
+
+		if (imu_sub)
+		{
+			imu_sub.shutdown();
 		}
 	}
 
@@ -155,28 +174,51 @@ namespace ackermann_controller
 		d_x = sin(d_theta) * d_dist;
 		d_y = cos(d_theta) * d_dist;
 
-		//std::cout << "roc: " << base_length / tan(steering_pos) << std::endl;
-
-		if (d_pos < 10)
+		if (have_imu)
 		{
-			odom_msg.pose.pose.position.x += d_x * cos(last_theta) - d_y * sin(last_theta);
-			odom_msg.pose.pose.position.y += d_x * sin(last_theta) + d_y * cos(last_theta);
+			if (d_pos < 1.0 && d_x < 0.5 && d_y < 0.5)
+			{
+				double dd_x = d_x * cos(last_theta) - d_y * sin(last_theta);
+				double dd_y = d_x * sin(last_theta) + d_y * cos(last_theta);
 
-			last_theta += d_theta;
+				if (dd_x != dd_x || dd_y != dd_y)
+				{
+					ROS_WARN("Skipping this reading because WTF.");
+					goto wtfwtf;
+				}
 
-			odom_msg.pose.pose.orientation = tf::createQuaternionMsgFromYaw(last_theta + M_PI / 2.0);
+				odom_msg.pose.pose.position.x += dd_x;
+				odom_msg.pose.pose.position.y += dd_y;
 
-			odom_msg.twist.twist.angular.z = d_theta / period.toSec();
-			odom_msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
+				// Hack
+				//last_theta += d_theta;
 
-			odom_msg.header.stamp = time;
+				odom_msg.pose.pose.orientation = tf::createQuaternionMsgFromYaw(last_theta + M_PI / 2.0);
 
-			odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
+				odom_msg.twist.twist.angular.z = d_theta / period.toSec();
+				odom_msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
+
+				odom_msg.header.stamp = time;
+
+				odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
+
+				{
+					tf::Transform tr;
+					tf::poseMsgToTF(odom_msg.pose.pose, tr);
+					tf_br->sendTransform(tf::StampedTransform(tr, time, odom_msg.header.frame_id, odom_msg.child_frame_id));
+				}
+			}
+			else
+			{
+				ROS_WARN("Detected a large change in wheel position (%lfrad, (%lf, %lf)). Discarding this result...", d_pos, d_x, d_y);
+			}
 		}
 		else
 		{
-			ROS_WARN("Detected a large change in wheel position (%lf). Discarding this result...", d_pos);
+			ROS_WARN("Skipping this result because we don't have an IMU message yet");
 		}
+
+		wtfwtf:
 
 		last_wheel_pos = drive_pos;
 
@@ -195,5 +237,12 @@ namespace ackermann_controller
 		steering_joint.setCommand(msg->steering_angle);
 		since_last_cmd.fromSec(0.0);
 		have_msg = true;
+	}
+
+	// Hack
+	void AckermannController::imuCallback(const sensor_msgs::Imu::ConstPtr &msg)
+	{
+		last_theta = tf::getYaw(msg->orientation);
+		have_imu = true;
 	}
 }

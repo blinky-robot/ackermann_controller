@@ -30,6 +30,10 @@
 #include <dual_controller_interface/dual_controller_interface.h>
 #include <hardware_interface/joint_command_interface.h>
 #include <nav_msgs/Odometry.h>
+#include <tf/transform_broadcaster.h>
+
+// Hack
+#include <sensor_msgs/Imu.h>
 
 namespace ackermann_controller
 {
@@ -68,6 +72,13 @@ namespace ackermann_controller
 		double cmd_timeout;
 		ros::Duration since_last_cmd;
 		bool have_msg;
+
+		tf::TransformBroadcaster *tf_br;
+
+		// HACK
+		ros::Subscriber imu_sub;
+		void imuCallback(const sensor_msgs::Imu::ConstPtr &msg);
+		bool have_imu;
 	};
 }
 
