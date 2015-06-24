@@ -67,7 +67,8 @@ namespace ackermann_controller
 
 		double cmd_timeout;
 		ros::Duration since_last_cmd;
-		bool have_msg;
+		bool have_cmd;
+		bool have_last;
 	};
 }
 

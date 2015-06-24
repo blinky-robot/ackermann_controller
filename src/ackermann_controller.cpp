@@ -44,7 +44,8 @@ namespace ackermann_controller
 		  last_wheel_pos(0.0),
 		  cmd_timeout(0.25),
 		  since_last_cmd(0.0),
-		  have_msg(false)
+		  have_cmd(false),
+		  have_last(false)
 	{
 	}
 
@@ -149,43 +150,43 @@ namespace ackermann_controller
 		drive_vel = drive_joint.getVelocity();
 		steering_pos = steering_joint.getPosition();
 
-		d_pos = drive_pos - last_wheel_pos;
-		d_dist = d_pos * wheel_diameter / 2.0;
-		d_theta = tan(steering_pos) * d_dist / base_length;
-		d_x = sin(d_theta) * d_dist;
-		d_y = cos(d_theta) * d_dist;
-
-		//std::cout << "roc: " << base_length / tan(steering_pos) << std::endl;
-
-		if (d_pos < 10)
+		if (have_last)
 		{
-			odom_msg.pose.pose.position.x += d_x * cos(last_theta) - d_y * sin(last_theta);
-			odom_msg.pose.pose.position.y += d_x * sin(last_theta) + d_y * cos(last_theta);
+			d_pos = drive_pos - last_wheel_pos;
+			d_dist = d_pos * wheel_diameter / 2.0;
+			d_theta = tan(steering_pos) * d_dist / base_length;
+			d_x = sin(d_theta) * d_dist;
+			d_y = cos(d_theta) * d_dist;
 
-			last_theta += d_theta;
+			if (d_pos < 2 * M_PI && d_pos > -2 * M_PI)
+			{
+				odom_msg.pose.pose.position.x += d_x * cos(last_theta) - d_y * sin(last_theta);
+				odom_msg.pose.pose.position.y += d_x * sin(last_theta) + d_y * cos(last_theta);
 
-			odom_msg.pose.pose.orientation = tf::createQuaternionMsgFromYaw(last_theta + M_PI / 2.0);
+				last_theta += d_theta;
 
-			odom_msg.twist.twist.angular.z = d_theta / period.toSec();
-			odom_msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
+				odom_msg.pose.pose.orientation = tf::createQuaternionMsgFromYaw(last_theta + M_PI / 2.0);
 
-			odom_msg.header.stamp = time;
+				odom_msg.twist.twist.angular.z = d_theta / period.toSec();
+				odom_msg.twist.twist.linear.x = drive_vel * wheel_diameter / 2.0;
 
-			odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
-		}
-		else
-		{
-			ROS_WARN("Detected a large change in wheel position (%lf). Discarding this result...", d_pos);
+				odom_msg.header.stamp = time;
+
+				odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
+			}
+			else
+			{
+				ROS_WARN("Detected a large change in wheel position (%lf). Discarding this result...", d_pos);
+			}
+
+			if (have_cmd && since_last_cmd.toSec() > cmd_timeout)
+			{
+				ROS_WARN_THROTTLE(1, "Timeout receiving commands");
+				drive_joint.setCommand(0.0);
+			}
 		}
 
 		last_wheel_pos = drive_pos;
-
-		if (have_msg && since_last_cmd.toSec() > cmd_timeout)
-		{
-			ROS_WARN_THROTTLE(1, "Timeout receiving commands");
-			drive_joint.setCommand(0.0);
-		}
-
 		since_last_cmd += period;
 	}
 
@@ -194,6 +195,6 @@ namespace ackermann_controller
 		drive_joint.setCommand(2.0 * msg->speed / wheel_diameter); // Convert to angular
 		steering_joint.setCommand(msg->steering_angle);
 		since_last_cmd.fromSec(0.0);
-		have_msg = true;
+		have_cmd = true;
 	}
 }
