@@ -53,10 +53,10 @@ namespace ackermann_controller
 		ros::Subscriber ackermann_sub;
 		ros::Publisher odom_pub;
 
-		hardware_interface::JointHandle drive_joint;
-		std::string drive_joint_name;
-		hardware_interface::JointHandle steering_joint;
-		std::string steering_joint_name;
+		std::vector<hardware_interface::JointHandle> drive_joints;
+		std::vector<std::string> drive_joint_names;
+		std::vector<hardware_interface::JointHandle> steering_joints;
+		std::vector<std::string> steering_joint_names;
 
 		double base_length;
 		double wheel_diameter;

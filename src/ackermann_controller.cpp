@@ -36,8 +36,6 @@ namespace ackermann_controller
 	AckermannController::AckermannController()
 		: nh(NULL),
 		  nh_priv(NULL),
-		  drive_joint_name("drive_motor"),
-		  steering_joint_name("steering_servo"),
 		  base_length(0.33),
 		  wheel_diameter(0.109),
 		  last_theta(-M_PI / 2.0),
@@ -62,12 +60,12 @@ namespace ackermann_controller
 		nh = &root_nh;
 		nh_priv = &controller_nh;
 
-		nh_priv->param("drive_joint_name", drive_joint_name, drive_joint_name);
+		nh_priv->param("drive_joint_names", drive_joint_names, drive_joint_names);
 		nh_priv->param("base_length", base_length, base_length);
 		nh_priv->param("cmd_timeout", cmd_timeout, cmd_timeout);
 		nh_priv->param("child_frame_id", odom_msg.child_frame_id, std::string("base_link"));
 		nh_priv->param("frame_id", odom_msg.header.frame_id, std::string("odom"));
-		nh_priv->param("steering_joint_name", steering_joint_name, steering_joint_name);
+		nh_priv->param("steering_joint_names", steering_joint_names, steering_joint_names);
 		nh_priv->param("wheel_diameter", wheel_diameter, wheel_diameter);
 
 		nh_priv->getParam("pose_covariance_diagonal", pose_cov_list);
@@ -102,14 +100,39 @@ namespace ackermann_controller
 			(0)  (0)  (0)  (0)  (static_cast<double>(twist_cov_list[4])) (0)
 			(0)  (0)  (0)  (0)  (0)  (static_cast<double>(twist_cov_list[5]));
 
-		drive_joint = hw_b->getHandle(drive_joint_name);
-		steering_joint = hw_a->getHandle(steering_joint_name);
+		if (drive_joint_names.size() < 1)
+		{
+			ROS_ERROR("No drive joints specified");
+			return false;
+		}
+
+		if (steering_joint_names.size() < 1)
+		{
+			ROS_ERROR("No steering joints specified");
+			return false;
+		}
+
+		for (i = 0; i < (signed)drive_joint_names.size(); i++)
+		{
+			drive_joints.push_back(hw_b->getHandle(drive_joint_names[i]));
+		}
+
+		for (i = 0; i < (signed)steering_joint_names.size(); i++)
+		{
+			steering_joints.push_back(hw_a->getHandle(steering_joint_names[i]));
+		}
 
 		return true;
 	}
 
 	void AckermannController::starting(const ros::Time &time)
 	{
+		if (nh == NULL)
+		{
+			ROS_ERROR("starting() called before init()!");
+			return;
+		}
+
 		if (!ackermann_sub)
 		{
 			ackermann_sub = nh->subscribe("ackermann_cmd", 1, &AckermannController::ackermannCmdCallback, this);
@@ -146,9 +169,9 @@ namespace ackermann_controller
 		double d_x;
 		double d_y;
 
-		drive_pos = drive_joint.getPosition();
-		drive_vel = drive_joint.getVelocity();
-		steering_pos = steering_joint.getPosition();
+		drive_pos = drive_joints[0].getPosition();
+		drive_vel = drive_joints[0].getVelocity();
+		steering_pos = steering_joints[0].getPosition();
 
 		if (have_last)
 		{
@@ -172,7 +195,10 @@ namespace ackermann_controller
 
 				odom_msg.header.stamp = time;
 
-				odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
+				if (odom_pub)
+				{
+					odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
+				}
 			}
 			else
 			{
@@ -181,9 +207,24 @@ namespace ackermann_controller
 
 			if (have_cmd && since_last_cmd.toSec() > cmd_timeout)
 			{
+				unsigned int i;
+
 				ROS_WARN_THROTTLE(1, "Timeout receiving commands");
-				drive_joint.setCommand(0.0);
+
+				for (i = 0; i < drive_joints.size(); i++)
+				{
+					drive_joints[i].setCommand(0.0);
+				}
+
+				for (i = 0; i < steering_joints.size(); i++)
+				{
+					steering_joints[i].setCommand(std::numeric_limits<double>::quiet_NaN());
+				}
 			}
+		}
+		else
+		{
+			have_last = true;
 		}
 
 		last_wheel_pos = drive_pos;
@@ -192,8 +233,18 @@ namespace ackermann_controller
 
 	void AckermannController::ackermannCmdCallback(const ackermann_msgs::AckermannDrive::ConstPtr &msg)
 	{
-		drive_joint.setCommand(2.0 * msg->speed / wheel_diameter); // Convert to angular
-		steering_joint.setCommand(msg->steering_angle);
+		unsigned int i;
+
+		for (i = 0; i < drive_joints.size(); i++)
+		{
+			drive_joints[i].setCommand(2.0 * msg->speed / wheel_diameter); // Convert to angular
+		}
+
+		for (i = 0; i < steering_joints.size(); i++)
+		{
+			steering_joints[i].setCommand(msg->steering_angle);
+		}
+
 		since_last_cmd.fromSec(0.0);
 		have_cmd = true;
 	}
