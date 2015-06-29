@@ -181,7 +181,7 @@ namespace ackermann_controller
 			d_x = sin(d_theta) * d_dist;
 			d_y = cos(d_theta) * d_dist;
 
-			if (d_pos < 2 * M_PI && d_pos > -2 * M_PI)
+			if (d_pos < 3 * M_PI && d_pos > -3 * M_PI)
 			{
 				odom_msg.pose.pose.position.x += d_x * cos(last_theta) - d_y * sin(last_theta);
 				odom_msg.pose.pose.position.y += d_x * sin(last_theta) + d_y * cos(last_theta);
@@ -199,6 +199,10 @@ namespace ackermann_controller
 				{
 					odom_pub.publish(nav_msgs::OdometryPtr(new nav_msgs::Odometry(odom_msg)));
 				}
+			}
+			else if(isnan(d_pos))
+			{
+				ROS_WARN_THROTTLE(1, "Detected NaN in wheel position. Discarding this result...");
 			}
 			else
 			{
@@ -222,7 +226,7 @@ namespace ackermann_controller
 				}
 			}
 		}
-		else
+		else if(!isnan(drive_pos))
 		{
 			have_last = true;
 		}
